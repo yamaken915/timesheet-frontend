@@ -1,0 +1,196 @@
+let selectedFiles = [];
+
+// 初期化
+window.onload = () => {
+  document.getElementById("loadingMsg").style.display = "none";
+  populateYearMonth();
+  loadFromLocalStorage();
+};
+
+// ファイル選択時に追加（CSVファイルのみ）
+const fileInput = document.getElementById("fileInput");
+fileInput.addEventListener("change", (e) => {
+  const newFiles = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith(".csv"));
+  selectedFiles = selectedFiles.concat(newFiles);
+  updateFileList();
+});
+
+// ドラッグ＆ドロップでファイル追加（CSVファイルのみ）
+const dropZone = document.getElementById("dropZone");
+dropZone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragleave", () => {
+  dropZone.classList.remove("dragover");
+});
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropZone.classList.remove("dragover");
+  const newFiles = Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith(".csv"));
+  selectedFiles = selectedFiles.concat(newFiles);
+  updateFileList();
+});
+
+// ファイル一覧を表示・削除可能に
+function updateFileList() {
+  const list = document.getElementById("fileList");
+  list.innerHTML = "";
+
+  selectedFiles.forEach((file, index) => {
+    const li = document.createElement("li");
+    li.textContent = file.name;
+
+    const btn = document.createElement("button");
+    btn.textContent = "削除";
+    btn.className = "remove-button";
+    btn.onclick = () => {
+      selectedFiles.splice(index, 1);
+      updateFileList();
+    };
+
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+}
+
+// 年月ドロップダウン生成と初期設定（前月選択）
+function populateYearMonth() {
+  const yearSelect = document.getElementById("year");
+  const monthSelect = document.getElementById("month");
+  const today = new Date();
+  const defaultYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+  const defaultMonth = today.getMonth() === 0 ? 12 : today.getMonth();
+
+  for (let y = 2023; y <= today.getFullYear() + 5; y++) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    if (y === defaultYear) opt.selected = true;
+    yearSelect.appendChild(opt);
+  }
+
+  for (let m = 1; m <= 12; m++) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    if (m === defaultMonth) opt.selected = true;
+    monthSelect.appendChild(opt);
+  }
+}
+
+// 入力値の保存と復元
+function loadFromLocalStorage() {
+  ["name", "eid", "organization", "task"].forEach(id => {
+    const val = localStorage.getItem(id);
+    if (val) document.getElementById(id).value = val;
+  });
+  const ratioMode = localStorage.getItem("ratio_mode") === "on";
+  document.getElementById("ratioMode").checked = ratioMode;
+
+  const ratioPercent = localStorage.getItem("ratio_percent");
+  if (ratioPercent) document.getElementById("ratioPercent").value = ratioPercent;
+
+  toggleRatioInput();
+}
+function saveToLocalStorage() {
+  ["name", "eid", "organization", "task"].forEach(id => {
+    localStorage.setItem(id, document.getElementById(id).value);
+  });
+  const ratioMode = document.getElementById("ratioMode").checked ? "on" : "off";
+  localStorage.setItem("ratio_mode", ratioMode);
+  localStorage.setItem("ratio_percent", document.getElementById("ratioPercent").value);
+}
+
+function toggleRatioInput() {
+  const ratioMode = document.getElementById("ratioMode").checked;
+  document.getElementById("ratioPercent").disabled = !ratioMode;
+}
+
+document.getElementById("ratioMode").addEventListener("change", toggleRatioInput);
+
+// アップロード処理
+const uploadBtn = document.getElementById("uploadBtn");
+uploadBtn.addEventListener("click", async () => {
+  // CSVファイル2個の検証
+  const csvFiles = selectedFiles.filter(f => f.name.toLowerCase().endsWith(".csv"));
+  if (csvFiles.length !== 2) {
+    alert("CSVファイルを2個選択してください");
+    return;
+  }
+
+  saveToLocalStorage();
+  uploadBtn.disabled = true;
+  document.getElementById("loadingMsg").style.display = "inline";
+
+  const name = document.getElementById("name").value;
+  const eid = document.getElementById("eid").value;
+  const organization = document.getElementById("organization").value;
+  const year = document.getElementById("year").value;
+  const month = document.getElementById("month").value;
+  const task = document.getElementById("task").value;
+  const ratioMode = document.getElementById("ratioMode").checked;
+  const ratioPercent = document.getElementById("ratioPercent").value.trim();
+
+  if (ratioMode) {
+    const ratioValue = Number(ratioPercent);
+    if (!Number.isFinite(ratioValue) || ratioValue < 0 || ratioValue > 100) {
+      alert("就業時間割合は0〜100の数値で入力してください");
+      uploadBtn.disabled = false;
+      document.getElementById("loadingMsg").style.display = "none";
+      return;
+    }
+  }
+
+  const formData = new FormData();
+  csvFiles.forEach(file => formData.append("files", file));
+  formData.append("name", name);
+  formData.append("eid", eid);
+  formData.append("organization", organization);
+  formData.append("year", year);
+  formData.append("month", month);
+  formData.append("task", task);
+  formData.append("ratio_mode", ratioMode ? "on" : "off");
+  if (ratioMode) {
+    formData.append("ratio_percent", ratioPercent);
+  }
+
+  try {
+    // 環境に応じてAPIエンドポイントを自動判定
+    const isProduction = window.location.hostname === 'yamaken999.github.io';
+    const apiEndpoint = isProduction 
+      ? "https://timesheet-api-prod.azurewebsites.net/upload"  // Azure本番環境
+      : "http://localhost:10000/upload";  // ローカル開発環境
+    
+    const response = await fetch(apiEndpoint, {
+      method: "POST",
+      body: formData
+    });
+
+    if (!response.ok) throw new Error("アップロード失敗");
+
+    // サーバーからのレスポンスヘッダーからファイル名を取得
+    const contentDisposition = response.headers.get('content-disposition');
+    let filename = `タイムシート(${year}_${month.padStart(2, '0')})_${eid}.xlsx`;
+    
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    alert("エラーが発生しました: " + err.message);
+  } finally {
+    uploadBtn.disabled = false;
+    document.getElementById("loadingMsg").style.display = "none";
+  }
+});
