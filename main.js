@@ -157,10 +157,22 @@ uploadBtn.addEventListener("click", async () => {
 
   try {
     // 環境に応じてAPIエンドポイントを自動判定
-    const isProduction = window.location.hostname === 'yamaken999.github.io';
-    const apiEndpoint = isProduction 
-      ? "https://timesheet-api-prod.azurewebsites.net/upload"  // Azure本番環境
-      : "http://localhost:10000/upload";  // ローカル開発環境
+    const hostname = window.location.hostname;
+    let apiEndpoint;
+    
+    if (hostname.includes('gray-grass-06e4f8300-1.eastasia.2.azurestaticapps.net')) {
+      // ステージング環境（PRプレビュー）
+      apiEndpoint = "https://timesheet-api-staging.azurewebsites.net/upload";
+    } else if (hostname.includes('gray-grass-06e4f8300') || hostname.includes('azurestaticapps.net')) {
+      // 本番環境（Azure Static Web Apps）
+      apiEndpoint = "https://timesheet-api-prod.azurewebsites.net/upload";
+    } else if (hostname === 'yamaken999.github.io') {
+      // 旧本番環境（GitHub Pages）
+      apiEndpoint = "https://timesheet-api-prod.azurewebsites.net/upload";
+    } else {
+      // ローカル開発環境
+      apiEndpoint = "http://localhost:10000/upload";
+    }
     
     const response = await fetch(apiEndpoint, {
       method: "POST",
